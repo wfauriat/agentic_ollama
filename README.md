@@ -4,8 +4,9 @@ An educational implementation of an agentic AI loop using the local Ollama API.
 Covers tool calling, reasoning tokens, streaming, persistent memory, and RAG
 (Retrieval-Augmented Generation) — all running locally with no cloud dependency.
 
-Built as a hands-on learning project: each version adds one layer of complexity
-so you can understand each concept in isolation before they are combined.
+Built as a hands-on learning project: the design was developed incrementally,
+each step adding one concept. Early versions are preserved in `early_agents/`
+for reference.
 
 ---
 
@@ -28,7 +29,7 @@ so you can understand each concept in isolation before they are combined.
 - Models pulled:
   ```bash
   ollama pull qwen3:8b          # reasoning + tool calling
-  ollama pull nomic-embed-text  # embeddings for RAG (agent_v4 only)
+  ollama pull nomic-embed-text  # embeddings for RAG
   ```
 - Python 3.10+ (uses `match` statements and `str | None` type hints)
 - Dependencies:
@@ -41,54 +42,35 @@ so you can understand each concept in isolation before they are combined.
 ## Quick start
 
 ```bash
-# Run the full-featured agent (v4, with RAG)
-python agent_v4.py
-
-# Build the RAG index first (for rag_search to work)
-python rag_indexer.py --glob "*.md"
-
-# Or start with the minimal agent (v1)
+# Run the agent
 python agent.py
+
+# Build the RAG index first (optional — enables rag_search)
+python rag_indexer.py --glob "*.md"
 ```
 
----
-
-## Version progression
-
-Each script is self-contained and runnable. They exist to show the evolution
-of the design — read them in order to understand how each concept is added.
-
-### `agent.py` — core loop
-The minimal educational implementation. Everything else builds on this.
-
-- 7 filesystem tools: `ls`, `cat`, `write_file`, `mkdir`, `mv`, `cp`, `rm`
-- Rich display: thinking (dim), tool calls (yellow), results (green), answer (blue)
-- `THINK = True/False` toggle for reasoning tokens
-- Safety: `safe_path()` blocks path traversal on every tool
-
-### `agent_v2.py` — observability
-- `DEBUG` flag: dumps the full `messages` list before each model call
-- Session logging to `logs/YYYY-MM-DD_HH-MM-SS.json`
-- `search` tool: grep-like text search across workspace files
-- `history` REPL command
-- `convo` mode: messages persist across tasks within a session
-
-### `agent_v3.py` — medium features
-- Streaming: thinking tokens live, final answer in Rich panel
-- Persistent memory: `memory.json` + `remember`/`forget`/`recall` tools
-- `run_python` tool: execute Python snippets, capture stdout/stderr
-- `persona` command: rewrite system prompt at runtime
-- Token counting: `in`/`out` per step + cumulative
-- `done` tool: explicit stop signal (fixes runaway verification loops)
-
-### `agent_v4.py` — RAG *(current)*
-- `rag_search(query, top_k)`: embeds query, retrieves top-k relevant chunks
-- `index` REPL command: rebuild the RAG index on demand
-- All v3 features included
+`agent.py` is the main entry point to the agent REPL.
 
 ---
 
-## REPL commands (v4)
+## Features
+
+### Tools available to the agent
+
+| Tool | Description |
+|---|---|
+| `ls` | List files and directories |
+| `cat` | Read a file |
+| `write_file` | Write/create a file |
+| `mkdir` | Create a directory |
+| `mv` / `cp` / `rm` | Move, copy, delete |
+| `search` | Keyword search across files |
+| `run_python` | Execute Python snippets, capture output |
+| `rag_search` | Semantic search over indexed documents |
+| `remember` / `forget` / `recall` | Persistent key-value memory |
+| `done` | Explicit task completion signal |
+
+### REPL commands
 
 | Command   | Effect |
 |-----------|--------|
@@ -115,15 +97,15 @@ User task
   └─► messages = [system, user_task]
         └─► for step in range(MAX_ITER):
               msg = call_model(messages)        # POST /api/chat
-              if msg.tool_calls:
+              if msg.tool_calls["done"]:
+                  show_final_answer             # explicit stop signal
+                  return
+              elif msg.tool_calls:
                   messages.append(msg)          # assistant turn first
                   for tc in tool_calls:
                       result = execute(tc)      # filesystem / python / RAG
                       messages.append(tool_result)
                   # loop — model sees results
-              elif msg.tool_calls["done"]:
-                  show_final_answer             # explicit stop signal
-                  return
               elif msg.content:
                   show_final_answer             # fallback stop
                   return
@@ -248,16 +230,15 @@ except Exception as e:
 list the files in the workspace
 create a directory called notes
 create notes/hello.txt with the content 'hello world'
-read CLAUDE.md and summarise it
+read README.md and summarise it
 create a backup dir and copy a file into it
 create a CSV with the capitals of all European countries and their population
 ```
 
-For RAG (after running `rag_indexer.py --glob "*.md"`):
+For RAG (after running `python rag_indexer.py --glob "*.md"`):
 ```
-what does the documentation say about the done tool pattern?
-find everything related to streaming in the indexed documents
-summarise the project based on the documentation
+search the indexed documents for anything about the done tool pattern
+search the indexed documents for everything related to streaming
 ```
 
 ---
@@ -342,12 +323,13 @@ There is no new primitive missing — only composition of what already exists.
 
 | File | Purpose |
 |---|---|
-| `agent.py` | v1 — minimal core loop |
-| `agent_v2.py` | v2 — observability + search |
-| `agent_v3.py` | v3 — streaming, memory, run_python |
-| `agent_v4.py` | v4 — RAG (current) |
-| `rag_indexer.py` | Standalone indexer for RAG |
+| `agent.py` | Main agent REPL — full-featured with RAG |
+| `rag_indexer.py` | Standalone indexer — builds `rag_index.json` |
 | `requirements.txt` | Python dependencies |
+| `early_agents/` | Earlier versions showing incremental design |
+| `early_agents/agent_v1.py` | v1 — minimal core loop |
+| `early_agents/agent_v2.py` | v2 — observability + search |
+| `early_agents/agent_v3.py` | v3 — streaming, memory, run_python |
 | `logs/` | Per-session message history (auto-created) |
 | `memory.json` | Persistent facts (auto-created on first `remember`) |
 | `rag_index.json` | Chunk + vector index (created by rag_indexer.py) |
