@@ -15,26 +15,28 @@ can read JSON schemas.
 
 ## Version Changelog
 
-| Feature                        | v1 `agent.py` | v2 `agent_v2.py` | v3 `agent_v3.py` |
-|-------------------------------|:---:|:---:|:---:|
-| Core agentic loop             | ✓   | ✓   | ✓   |
-| Tools: ls/cat/write/mkdir/mv/cp/rm | ✓ | ✓ | ✓ |
-| Rich display (panels)         | ✓   | ✓   | ✓   |
-| Thinking tokens (THINK flag)  | ✓   | ✓   | ✓   |
-| DEBUG flag (messages dump)    | ✓*  | ✓   | ✓   |
-| Session logging to logs/      |     | ✓   | ✓   |
-| `search` tool (grep-like)     |     | ✓   | ✓   |
-| `history` REPL command        |     | ✓   | ✓   |
-| Conversation mode (convo)     |     | ✓   | ✓   |
-| **Streaming responses**       |     |     | ✓   |
-| **Persistent memory (JSON)**  |     |     | ✓   |
-| **`run_python` tool**         |     |     | ✓   |
-| **`persona` system prompt editor** |  |    | ✓   |
-| `remember` / `forget` / `recall` tools | | | ✓ |
-| `memory` REPL command         |     |     | ✓   |
-| `stream` REPL toggle          |     |     | ✓   |
-| **Token counting (per-step + cumulative)** | | | ✓ |
-| **`done` tool (explicit stop signal)** |  |  | ✓ |
+| Feature                        | v1 `agent.py` | v2 `agent_v2.py` | v3 `agent_v3.py` | v4 `agent_v4.py` |
+|-------------------------------|:---:|:---:|:---:|:---:|
+| Core agentic loop             | ✓   | ✓   | ✓   | ✓   |
+| Tools: ls/cat/write/mkdir/mv/cp/rm | ✓ | ✓ | ✓ | ✓ |
+| Rich display (panels)         | ✓   | ✓   | ✓   | ✓   |
+| Thinking tokens (THINK flag)  | ✓   | ✓   | ✓   | ✓   |
+| DEBUG flag (messages dump)    | ✓*  | ✓   | ✓   | ✓   |
+| Session logging to logs/      |     | ✓   | ✓   | ✓   |
+| `search` tool (grep-like)     |     | ✓   | ✓   | ✓   |
+| `history` REPL command        |     | ✓   | ✓   | ✓   |
+| Conversation mode (convo)     |     | ✓   | ✓   | ✓   |
+| Streaming responses           |     |     | ✓   | ✓   |
+| Persistent memory (JSON)      |     |     | ✓   | ✓   |
+| `run_python` tool             |     |     | ✓   | ✓   |
+| `persona` system prompt editor|     |     | ✓   | ✓   |
+| `remember`/`forget`/`recall`  |     |     | ✓   | ✓   |
+| `memory` / `stream` toggles   |     |     | ✓   | ✓   |
+| Token counting                |     |     | ✓   | ✓   |
+| `done` tool (stop signal)     |     |     | ✓   | ✓   |
+| **`rag_search` tool**         |     |     |     | ✓   |
+| **`rag_indexer.py`**          |     |     |     | ✓   |
+| **`index` REPL command**      |     |     |     | ✓   |
 
 *v1: uncomment a line manually
 
@@ -234,6 +236,43 @@ number is the best way to understand context cost in practice.
 qwen3:8b: 40,960 tokens. Long sessions accumulate messages.
 Watch for: model starts ignoring early context → time to summarise or truncate.
 
+### RAG — Retrieval-Augmented Generation
+The core idea: instead of sending full files as context, retrieve only the
+relevant chunks. Three steps:
+
+```
+1. Index  : chunk files → embed each chunk → store {text, vector} in rag_index.json
+2. Retrieve: embed query → cosine similarity vs all chunks → return top-k
+3. Inject : top-k chunk texts go into the prompt as context
+```
+
+```python
+# Embed (indexing + query time — same model, same vector space)
+resp = requests.post("http://localhost:11434/api/embed",
+                     json={"model": "nomic-embed-text", "input": text})
+vector = resp.json()["embeddings"][0]   # list of 768 floats
+
+# Cosine similarity (numpy)
+def cosine_similarity(a, b):
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+# Retrieve top-k
+q_vec  = embed_query(query)
+scored = [(cosine_similarity(q_vec, e["vector"]), e) for e in index]
+chunks = [e for _, e in sorted(scored, reverse=True)[:top_k]]
+```
+
+**Key tuning parameters:**
+- `CHUNK_LINES` — smaller = more precise, more chunks, larger index
+- `CHUNK_OVERLAP` — prevents facts from being split across boundaries
+- `top_k` — more chunks = more context, higher token cost
+
+**Tool description matters:** the model picks tools by description alone.
+Explicitly rank tools: "prefer rag_search over search for conceptual queries."
+
+**When RAG helps:** source material larger than fits comfortably in context.
+For small workspaces, `cat` + `search` are often sufficient.
+
 ### run_python safety
 - `subprocess.run([sys.executable, "-c", code], timeout=15, cwd=WORK_DIR)`
 - No `shell=True` — avoids shell injection
@@ -304,8 +343,7 @@ except Exception as e:
   Pattern: two-phase prompt (plan → act)
 - **Self-critique loop** — agent scores its own output and optionally retries
   Pattern: generator + critic + conditional retry
-- **RAG / embeddings** — embed workspace files, retrieve relevant chunks for context
-  Tools: `ollama embeddings` endpoint, cosine similarity, `numpy`
+- ~~**RAG / embeddings**~~ ✓ done in v4
 - **Multi-agent** — orchestrator + specialist sub-agents
   Pattern: one agent plans, others execute, orchestrator aggregates
 
