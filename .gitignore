@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+logs/
+memory.json
+rag_index.json
+.env
